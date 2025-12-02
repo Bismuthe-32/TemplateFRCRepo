@@ -1,63 +1,65 @@
-// Copyright (c) FIRST and other WPILib contributors.
-// Open Source Software; you can modify and/or share it under the terms of
-// the WPILib BSD license file in the root directory of this project.
-
 package frc.robot;
 
-import frc.robot.Constants.OperatorConstants;
-import frc.robot.commands.Autos;
-import frc.robot.commands.ExampleCommand;
-import frc.robot.subsystems.ExampleSubsystem;
-import edu.wpi.first.wpilibj2.command.Command;
-import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
-import edu.wpi.first.wpilibj2.command.button.Trigger;
+import com.pathplanner.lib.auto.NamedCommands;
+import com.pathplanner.lib.commands.PathPlannerAuto;
+import edu.wpi.first.cameraserver.CameraServer;
+import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.smartdashboard.*;
+import edu.wpi.first.wpilibj2.command.*;
+import edu.wpi.first.wpilibj2.command.button.*;
+import frc.robot.subsystems.*;
+import frc.robot.utils.Constants;
+import frc.robot.utils.Constants.JoystickConstants;
 
-/**
- * This class is where the bulk of the robot should be declared. Since Command-based is a
- * "declarative" paradigm, very little robot logic should actually be handled in the {@link Robot}
- * periodic methods (other than the scheduler calls). Instead, the structure of the robot (including
- * subsystems, commands, and trigger mappings) should be declared here.
- */
 public class RobotContainer {
-  // The robot's subsystems and commands are defined here...
-  private final ExampleSubsystem m_exampleSubsystem = new ExampleSubsystem();
-
-  // Replace with CommandPS4Controller or CommandJoystick if needed
-  private final CommandXboxController m_driverController =
-      new CommandXboxController(OperatorConstants.kDriverControllerPort);
-
-  /** The container for the robot. Contains subsystems, OI devices, and commands. */
+  public static final Joystick controller3D = new Joystick(0);
+  public static final Joystick wolfByte = new Joystick(1);
+  public static double pov;
+  public static final JoystickButton resetHeading_Start = new JoystickButton(controller3D, Constants.JoystickConstants.BaseRM);
+  private final Drivetrain drivetrain = Drivetrain.getInstance();
+  private ParallelRaceGroup swerveStopCmd;
+  SendableChooser<Command> auton_chooser;
+  
   public RobotContainer() {
-    // Configure the trigger bindings
+    CameraServer.startAutomaticCapture(0); // Start capturing from the first camera
+    CameraServer.startAutomaticCapture(1); // Start capturing from the second camera
+
+    //call to configureBindings() method
     configureBindings();
+
+    // Register swerveStopCmd in Pathplanner to stop robot
+    swerveStopCmd = new SwerveDriveCommands(0.0,0.0,0.0).withTimeout(3);
+    NamedCommands.registerCommand("Swerve Stop", swerveStopCmd);
+
+    //set up auton commands for the driver
+    auton_chooser = new SendableChooser<>();
+    auton_chooser.setDefaultOption("MidReefAuto", new PathPlannerAuto("MidReefAuto"));
+    SmartDashboard.putData("Auton Chooser", auton_chooser);
   }
 
-  /**
-   * Use this method to define your trigger->command mappings. Triggers can be created via the
-   * {@link Trigger#Trigger(java.util.function.BooleanSupplier)} constructor with an arbitrary
-   * predicate, or via the named factories in {@link
-   * edu.wpi.first.wpilibj2.command.button.CommandGenericHID}'s subclasses for {@link
-   * CommandXboxController Xbox}/{@link edu.wpi.first.wpilibj2.command.button.CommandPS4Controller
-   * PS4} controllers or {@link edu.wpi.first.wpilibj2.command.button.CommandJoystick Flight
-   * joysticks}.
-   */
   private void configureBindings() {
-    // Schedule `ExampleCommand` when `exampleCondition` changes to `true`
-    new Trigger(m_exampleSubsystem::exampleCondition)
-        .onTrue(new ExampleCommand(m_exampleSubsystem));
+    double slider = (-RobotContainer.controller3D.getRawAxis(JoystickConstants.Slider) + 1) / 2.0;
+    if (slider == 0)  {
+      slider = 0.001;
+    }
 
-    // Schedule `exampleMethodCommand` when the Xbox controller's B button is pressed,
-    // cancelling on release.
-    m_driverController.b().whileTrue(m_exampleSubsystem.exampleMethodCommand());
+    double frontSpeed = RobotContainer.controller3D.getRawAxis(JoystickConstants.X) * slider;
+    double sideSpeed = RobotContainer.controller3D.getRawAxis(JoystickConstants.Y) * slider;
+    double turnSpeed = RobotContainer.controller3D.getRawAxis(JoystickConstants.Rot) * slider;
+
+    drivetrain.setDefaultCommand(new SwerveDriveCommands(frontSpeed,sideSpeed,turnSpeed));
+
+    resetHeading_Start.onTrue(new InstantCommand(drivetrain::zeroHeading, drivetrain));
+
+    //Comment out before driving. Will only let robot turn.
+    pov = wolfByte.getPOV();
+    if (pov != -1) {
+      specDrive.setDefaultCommand(new SpecDriveCommands(wolfByte.getPOV()));
+    }
+    //specDrive.setDefaultCommand(new SpecDriveCommands2(wolfByte.getRawAxis(0)));
   }
 
-  /**
-   * Use this to pass the autonomous command to the main {@link Robot} class.
-   *
-   * @return the command to run in autonomous
-   */
   public Command getAutonomousCommand() {
-    // An example command will be run in autonomous
-    return Autos.exampleAuto(m_exampleSubsystem);
+    return auton_chooser.getSelected();
   }
 }
